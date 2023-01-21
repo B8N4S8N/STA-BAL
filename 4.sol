@@ -160,6 +160,4 @@ function burn(address from, address token, uint256 amount) public {
     balances[from] -= amount;
 }
 
-
-
-    }
+}

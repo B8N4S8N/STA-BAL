@@ -35,7 +35,7 @@ require(msg.sender == owner, "Only the owner can set the oracle address.");
 oraclePrices[_oracle] = oracle;
 }
 
-function getPrice() public view returns (uint256) {
+/*function getPrice() public view returns (uint256) {
 // Retrieve the current price from the oracle contract
 Oracle oracle;
 uint256 price;
@@ -46,5 +46,17 @@ oraclePrices[_oracle] = price;
 }
 return oraclePrices[msg.sender];
 }
+*/
+function getPrice() public view returns (uint256) {
+    uint256 price;
+    for (address _oracle in oraclePrices) {
+        Oracle oracle = Oracle(_oracle);
+        price = oracle.getPrice("STABLECOIN"); // replace "STABLECOIN" with the symbol of the stablecoin
+        oraclePrices[_oracle] = price;
+    }
+    return oraclePrices[msg.sender];
+}
+
+
 
 function getInterestRate()

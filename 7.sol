@@ -145,4 +145,14 @@ delete aTokenMapping[aToken];
     balances[from] -= amount;
 }
 
+function transferOwner(address newOwner) public {
+    // Only the current owner can transfer ownership
+    require(msg.sender == owner, "Only the current owner can transfer ownership.");
+    // The new owner address cannot be the zero address
+    require(newOwner != address(0), "The new owner address cannot be the zero address.");
+    // Transfer ownership
+    owner = newOwner;
+    emit OwnershipTransferred(msg.sender, newOwner);
+}
+
 }

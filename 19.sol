@@ -1,0 +1,129 @@
+pragma solidity ^0.8.0;
+
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/contracts/proxy/Proxy.sol";
+import "https://github.com/aave/aave-protocol/contracts/aTokens/AToken.sol";
+import "https://github.com/balancer-labs/balancer-contracts/contracts/BalancerPool.sol";
+import "https://github.com/smartcontractkit/chainlink/contracts/ChainlinkClient.sol";
+
+contract StableCoinFactory {
+    address public owner;
+    mapping(address => bool) public isAToken;
+    mapping(address => address) public stableCoinProxies;
+    mapping(address => address) public balancerPools;
+
+    constructor() public {
+        owner = msg.sender;
+    }
+
+    function createStableCoin(address _balancerPool, address _aToken, uint256 _targetPrice, address _chainlink) public {
+        require(msg.sender == owner, "Only the owner can create stablecoins.");
+        require(isAToken[_aToken], "AToken must be registered before creating stablecoin.");
+        require(balancerPools[_balancerPool], "Balancer pool must be registered before creating stablecoin.");
+
+        // Create new StableCoin contract and proxy it
+        address stableCoin = new StableCoin(_balancerPool, _aToken, _targetPrice, _chainlink);
+        stableCoinProxies[_balancerPool] = proxy.address;
+
+        emit StableCoinCreated(stableCoin);
+    }
+
+    function addAToken(address _aToken) public {
+        require(msg.sender == owner, "Only the owner can add aTokens.");
+        require(!isAToken[_aToken], "Token is already registered.");
+        isAToken[_aToken] = true;
+    }
+
+    function addBalancerPool(address _pool) public {
+        require(msg.sender == owner, "Only the owner can add balancer pools.");
+        require(!balancerPools[_pool], "Pool is already registered.");
+        balancerPools[_pool] = _pool;
+    }
+
+    function removeBalancerPool(address _pool) public {
+        require(msg.sender == owner, "Only the owner can remove balancer pools.");
+        require(balancerPools[_pool], "Pool is not registered.");
+        delete balancerPools[_pool];
+    }
+
+    function removeAToken(address _aToken) public {
+        require(msg.sender == owner, "Only the owner can remove aTokens.");
+        require(isAToken[_aToken], "Token is not registered.");
+        isAToken[_aToken] = false;
+    }
+}
+
+contract StableCoin is Proxy {
+    address public oracle;
+    BalancerPool public pool;
+    AToken public aToken;
+    uint256 public targetPrice;
+    ChainlinkClient public chainlink;
+    mapping(address => uint256) public balances;
+
+    constructor(address _balancerPool, address _aToken, uint256 _targetPrice, address _oracle) public {
+    // Ensure _balancerPool, _aToken, and _oracle are all contract addresses
+    require(_balancerPool.isContract(), "Balancer pool address must be a contract.");
+    require(_aToken.isContract(), "AToken address must be a contract.");
+    require(_oracle.isContract(), "Oracle address must be a contract.");
+    
+    // Assign passed in variables to their respective state variables
+    pool = BalancerPool(_balancerPool);
+    aToken = AToken(_aToken);
+    oracle = _oracle;
+    targetPrice = _targetPrice;
+
+    // Check that the pool and aToken are valid
+    require(pool.isValid(), "Invalid Balancer pool.");
+    require(aToken.isValid(), "Invalid aToken.");
+}
+
+function mint(address _owner, uint256 _amount) public {
+    // Ensure there is enough liquidity and supply cap
+    require(pool.remainingLiquidityCap() >= _amount, "Insufficient liquidity cap in pool.");
+    require(aToken.remainingSupplyCap() >= _amount, "Insufficient supply cap for AToken.");
+
+    // Ensure amount is greater than 0 and will not cause overflow
+    require(_amount > 0, "Amount must be greater than 0.");
+    require(balances[_owner] + _amount > balances[_owner], "Overflow.");
+
+    // Retrieve current price from oracle
+    Oracle oracleInstance = Oracle(oracle);
+    uint256 currentPrice = oracleInstance.getPrice("STABLECOIN");
+    // Ensure current price is below the target price
+    require(currentPrice <= targetPrice, "Coin price is already above target price.");
+
+    // Mint AToken
+    aToken.mint(_owner, _amount);
+
+    // Add liquidity to pool
+    pool.addLiquidity(_aToken, _amount);
+
+    // Update user balance
+    balances[_owner] += _amount;
+
+    // Emit event
+    emit Mint(_aToken, _owner, _amount);
+}
+
+function burn(address _owner, uint256 _amount) public {
+    // Ensure _owner has enough balance for burn
+    require(balances[_owner] >= _amount, "Insufficient balance for burn.");
+
+    // Burn AToken
+    aToken.burn(_owner, _amount);
+
+    // Remove liquidity from pool
+    pool.removeLiquidity(_aToken, _amount);
+
+    // Update user balance
+    balances[_owner] -= _amount;
+
+    // Emit event
+    emit Burn(_aToken, _owner, _amount);
+}
+
+// Additional functionality to check if the pool and aToken are valid
+function isValid() public view returns (bool) {
+    return pool.isValid() && aToken.isValid();
+}
+}

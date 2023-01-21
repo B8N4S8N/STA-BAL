@@ -26,7 +26,7 @@ contract StableCoin {
         }
         pool = BalancerPool(_pool);
         targetPrice = _targetPrice;
-        oracles = PriorityQueue(contract address);
+        oracles = PriorityQueue("assign with priority que contract address");
     }
 
     function addOracle(address _oracle) public {
